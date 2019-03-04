@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="sketchy",
+    name="pathfinder",
     url="https://github.com/pf-core/pathfinder",
     author="Eike J. Steinig",
     author_email="eikejoachim.steinig@my.jcu.edu.au",
