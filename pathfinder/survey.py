@@ -143,10 +143,8 @@ class Survey:
             batch_dir.mkdir(parents=True, exist_ok=exist_ok)
             batch.to_csv(batch_csv)
 
-            dirs.append(batch_dir)
-            csv.append(batch_csv)
+            yield batch_dir, batch_csv
 
-        return dirs, csv
 
     def batch(self, query=None, batch_size=None, max_gb=None):
 

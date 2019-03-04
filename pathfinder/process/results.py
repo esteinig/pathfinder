@@ -110,7 +110,7 @@ class SurveyResult(Result, SurveyProcessor, SurveyCleaner):
             iids_mlst.intersection(iids_kraken)
         )
 
-        self.data.subset(iids=complete)
+        self.data = self.data.subset(iids=complete)
 
         for attr, df in self.data:
             self.tracker.complete += [df.index.unique().tolist()]
@@ -129,8 +129,6 @@ class SurveyResult(Result, SurveyProcessor, SurveyCleaner):
         print(
             counts.nlargest(top)
         )
-
-
 
     def plot_mlst_summary(self, top=10):
 

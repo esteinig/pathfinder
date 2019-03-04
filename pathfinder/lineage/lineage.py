@@ -8,7 +8,7 @@ Lineage analyser prototype.
 
 import pandas
 
-from pathfinder.process.data import ResultData
+from pathfinder.process.results import SurveyResult
 from pathfinder.database.client import PathfinderClient
 
 
@@ -22,13 +22,18 @@ class LineageAnalyser(PathfinderClient):
      the parse an processing and cleaning steps or read from storage.
     """
 
-    def __init__(self, data):
+    def __init__(self, survey):
 
-        self.data: ResultData = data
+        self.survey: SurveyResult = survey
 
-    def group_data_mlst(self):
+        self._group_data_mlst()
+
+    def _group_data_mlst(self):
 
         """ Group all dataframes in the data object by sequence type """
 
-        self.data = self.data.groupby('mlst', 'sequence_type')
+        self.survey.data.groupby('mlst', 'sequence_type', set_index=True)
 
+    def _summarize_genomes(self):
+
+        pass

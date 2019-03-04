@@ -3,6 +3,10 @@ from pandas.core.groupby import DataFrameGroupBy
 from numpy import nan
 from pathlib import Path
 from dataclasses import dataclass
+import copy
+import shutil
+from tqdm import tqdm
+
 
 #################################
 # Data containers for Nextflows #
@@ -22,6 +26,9 @@ class ResultData:
     fastq: pandas.DataFrame = pandas.DataFrame(
         columns=['forward', 'reverse']
     )
+
+    def __copy__(self):
+        """ Overwritten in subclasses """
 
     def __iter__(self):
 
@@ -100,12 +107,17 @@ class ResultData:
 
         self.update_iid()
 
-    def subset(self, iids):
+    def subset(self, iids, inplace=False):
         """ Subset the Data by a list of isolate IDs.
 
         If IDs are not in the data frame index, a row of null values
         for this ID is introduced in to the data frame.
         """
+
+        if inplace:
+            sub = self
+        else:
+            sub = copy.copy(self)
 
         for attr, df in self:
             subset = df[df.index.isin(iids)]
@@ -118,9 +130,11 @@ class ResultData:
                      )
                 )
 
-            setattr(self, attr, subset)
+            setattr(sub, attr, subset)
 
-        self.update_iid()
+        sub.update_iid()
+
+        return sub
 
     def groupby(self, attr, column, set_index=False, **kwargs) -> [DataFrameGroupBy]:
 
@@ -151,8 +165,95 @@ class ResultData:
             groups = df.groupby(by=column, **kwargs)
             yield groups, attr
 
-    def selectby(self, attr, column, files='fasta'):
-        pass
+    def select(self, attr, column, min_count=None,
+               sample=None, values=None):
+
+        data = getattr(self, attr)
+
+        # TODO: Both
+
+        if values:
+            iids = data[
+                data[column].isin(values)
+            ].index.unique().tolist()
+
+        elif min_count:
+            counts = data[column].value_counts()
+            largest = counts[counts > min_count]
+
+            print(largest)
+            subset = largest.index.to_series()  # Index: unique values counted
+
+            sub = data[
+                data[column].isin(subset)
+            ]
+
+            iids = sub.index.unique().tolist()
+
+            if sample:
+
+                iids = pandas.concat([
+                    group.sample(n=sample) for i, group in sub.groupby(column)
+                ]).index
+
+        else:
+            iids = data[column].index.unique().tolist()
+
+        return self.subset(iids)
+
+    def link_fasta(self, fdir: str or Path, symlink: bool = True,
+                   progbar: bool = True, index: dict = None):
+
+        fdir = self._check_dir(fdir)
+
+        for fasta in tqdm(
+                self.fasta.fasta,
+                disable=not progbar,
+                total=len(self.fasta)
+        ):
+            if index:
+                try:
+                    name = index[Path(fasta).stem] + '.fasta'
+                except TypeError:
+                    print(index[Path(fasta).stem])
+                    continue
+            else:
+                name = Path(fasta).name
+
+            if symlink:
+                (fdir / name).symlink_to(fasta)
+            else:
+                shutil.copy(
+                    fasta, str(fdir / name)
+                )
+
+    def link_fastq(self, fdir: str or Path, symlink: bool = True,
+                   progbar: bool = True):
+
+        fdir = self._check_dir(fdir)
+
+        for fwd, rv in tqdm(
+            self.fastq.itertuples(index=False),
+            disable=not progbar,
+            total=len(self.fastq)
+        ):
+            for fastq in (fwd, rv):
+                if symlink:
+                    (fdir / Path(fastq).name).symlink_to(fastq)
+                else:
+                    shutil.copy(
+                        fastq, str(fdir)
+                    )
+
+    @staticmethod
+    def _check_dir(fdir: str or Path) -> Path:
+
+        fdir = Path(fdir) if isinstance(fdir, str) else fdir
+
+        if not fdir.exists():
+            fdir.mkdir(parents=True)
+
+        return fdir
 
     # File operations
 
@@ -219,6 +320,13 @@ class SurveyData(ResultData):
 
     mykrobe_phenotype: pandas.DataFrame = pandas.DataFrame()
     mykrobe_genotype: pandas.DataFrame = pandas.DataFrame()
+
+    def __copy__(self):
+
+        sd = SurveyData()
+        for attr, data in self:
+            setattr(sd, attr, data)
+        return sd
 
     def get_file_paths(
             self,
