@@ -2,3 +2,7 @@ tqdm
 pandas
 colorama
 delegator.py
+google-cloud-storage
+click
+pytest
+pre-commit

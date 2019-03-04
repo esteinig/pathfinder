@@ -30,7 +30,12 @@ class MiniAspera:
 
         self.fasp = "era-fasp@fasp.sra.ebi.ac.uk:"
 
-    def download_batch(self, file, outdir=".", max=None):
+    def download_batch(
+            self,
+            file,
+            outdir: str = ".",
+            limit_download: int = None
+    ):
 
         batch = self.read_batch(file)
 
@@ -38,23 +43,29 @@ class MiniAspera:
         if not outpath.is_dir():
             outpath.mkdir(parents=True, exist_ok=True)
 
-        if max:
-            batch = batch.iloc[0:max]
+        if limit_download:
+            batch = batch.iloc[0:limit_download]
 
-        print(batch)
-        print(len(batch))
         with tqdm(total=len(batch)) as pbar:
             pbar.set_description("Downloading batch")
 
             for i, fastq in batch.iterrows():
-                fq1_address = fastq["ftp_1"].replace("ftp.sra.ebi.ac.uk", self.fasp)
+                fq1_address = fastq["ftp_1"].replace(
+                    "ftp.sra.ebi.ac.uk", self.fasp
+                )
                 fq1_path = Path(outdir) / Path(fq1_address).name
-                self.download(address=fq1_address, outfile=fq1_path, force=self.force)
+                self.download(
+                    address=fq1_address, outfile=fq1_path, force=self.force
+                )
 
                 if fastq["ftp_2"]:
-                    fq2_address = fastq["ftp_2"].replace("ftp.sra.ebi.ac.uk", self.fasp)
+                    fq2_address = fastq["ftp_2"].replace(
+                        "ftp.sra.ebi.ac.uk", self.fasp
+                    )
                     fq2_path = Path(outdir) / Path(fq2_address).name
-                    self.download(address=fq2_address, outfile=fq2_path, force=self.force)
+                    self.download(
+                        address=fq2_address, outfile=fq2_path, force=self.force
+                    )
 
                 pbar.update(1)
 
@@ -65,8 +76,11 @@ class MiniAspera:
             print(f"File exists: {outfile}")
             return
 
-        cmd = shlex.split(f"{self.ascp} -QT -l {str(self.limit)}m -P{str(self.port)}"
-                          f" -i {self.key} -q {address} {outfile}")
+        cmd = shlex.split(
+            f"{self.ascp} -QT -l {str(self.limit)}m"
+            f" -P{str(self.port)} -i {self.key} -q "
+            f"{address} {outfile}"
+        )
 
         try:
             subprocess.call(cmd)
@@ -93,12 +107,17 @@ class Survey:
 
         self.outdir = outdir
 
-        self.url_query = "https://www.ebi.ac.uk/ena/data/warehouse/search?query="
         self.url_result = "read_run"
         self.url_display = "report"
-        self.url_fields = "run_accession,tax_id,fastq_ftp,fastq_bytes,read_count,base_count," \
-                          "instrument_platform,instrument_model,library_layout,library_source," \
-                          "library_strategy,sample_accession,study_accession"  # TODO add study accession
+        self.url_query = "https://www.ebi.ac.uk/ena/data/" \
+                         "warehouse/search?query="
+        self.url_fields = "run_accession,tax_id,fastq_ftp,fastq_bytes," \
+                          "read_count,base_count," \
+                          "instrument_platform,instrument_model," \
+                          "library_layout,library_source," \
+                          "library_strategy,sample_accession,study_accession"
+
+        # TODO add study accession
 
         self.results = dict()
         self.query = pandas.DataFrame()
@@ -133,8 +152,6 @@ class Survey:
     @staticmethod
     def batch_output(batches, outdir="batches", exist_ok=True):
 
-        dirs, csv = list(), list()
-
         outdir = Path.cwd() / outdir
         for i, batch in enumerate(batches):
             batch_dir = outdir / f"batch_{i}"
@@ -144,7 +161,6 @@ class Survey:
             batch.to_csv(batch_csv)
 
             yield batch_dir, batch_csv
-
 
     def batch(self, query=None, batch_size=None, max_gb=None):
 
@@ -163,16 +179,23 @@ class Survey:
                     running_size = []
             return batches
         elif batch_size:
-            return [query[i:i + batch_size] for i in range(0, query.shape[0], batch_size)]
+            return [
+                query[i:i + batch_size] for i in range(
+                    0, query.shape[0], batch_size
+                )
+            ]
         else:
-            raise ValueError("Either maximum gigabytes or batch size must be set.")
+            raise ValueError(
+                "Either maximum gigabytes or batch size must be set."
+            )
 
     def query_ena(self, species="Staphylococcus aureus", scheme="illumina",
-                  study: str=None, term: str=None) -> (dict, str):
+                  study: str = None, term: str = None) -> (dict, str):
 
         """
-        Search the ENA warehouse for raw sequence reads with the following default parameters
-        to conform to current implementations of WGS analysis pipelines.
+        Search the ENA warehouse for raw sequence reads with the
+        following default parameters to conform to current implementations
+        of WGS analysis pipelines.
         """
 
         # Format queries correctly:
@@ -194,21 +217,29 @@ class Survey:
             strategy = "WGS"
 
         else:
-            raise SurveyError("Require pre-defined WGS scheme: 'Illumina' or 'Nanopore'")
+            raise SurveyError(
+                "Require pre-defined WGS scheme: 'Illumina' or 'Nanopore'"
+            )
 
         if species:
-            term = self._construct_species_query(species, platform, source, layout, strategy)
+            term = self._construct_species_query(
+                species, platform, source, layout, strategy
+            )
         elif study:
             term = self._construct_study_query(study)
         elif term:
             pass
         else:
-            raise ValueError("Need to specify either species, study accession, or custom search term for Survey.")
+            raise ValueError(
+                "Need to specify either species, study accession, "
+                "or custom search term for Survey.")
 
         url = f"{self.url_query}{term}&result={self.url_result}" \
-              f"&fields={self.url_fields}&display={self.url_display}".replace(" ", "%20")
+              f"&fields={self.url_fields}&" \
+            f"display={self.url_display}".replace(" ", "%20")
 
-        query_results = StringIO(urllib.request.urlopen(url).read().decode('utf-8'))
+        query_results = StringIO(urllib.request.urlopen(url)
+                                 .read().decode('utf-8'))
 
         try:
             df = pandas.read_csv(query_results, sep="\t")
@@ -229,8 +260,9 @@ class Survey:
         df = df.dropna(subset=["fastq_ftp"])
 
         if df.empty:
-            raise SurveyError("Query results are empty, check your query string or "
-                              "or confirm search manually at ENA: {}".format(url))
+            raise SurveyError(f"Query results are empty, check your "
+                              f"query string or confirm search manually "
+                              f"at ENA: {url}")
 
         genome_sizes = get_genome_sizes()
 
@@ -245,22 +277,28 @@ class Survey:
             if entry["library_layout"] == "PAIRED":
 
                 # If there are fewer than two links, ignore accession:
-                # this need to be fixed see project accession PRJEB12470 for ST59
+                # this need to be fixed see project accession PRJEB12470
+                # for ST59
+
                 # Need to split FASTQ into forward and reverse after download:
                 if len(ftp_links) < 2:
                     continue
                 else:
-                    # Get last two links and file sizes, which should be forward + reverse,
-                    # check that they are conforming to pattern _1.fastq.gz and _2.fastq.gz:
+                    # Get last two links and file sizes,
+                    # which should be forward + reverse,
+                    # check that they are conforming to
+                    # pattern _1.fastq.gz and _2.fastq.gz:
                     ftp_links = ftp_links[-2:]
-                    if "_1.fastq.gz" not in ftp_links[0] and "_2.fastq.gz" not in ftp_links[1]:
+                    if "_1.fastq.gz" not in ftp_links[0] and \
+                            "_2.fastq.gz" not in ftp_links[1]:
                         continue
                     ftp_1, ftp_2 = ftp_links
                     ftp_sizes = ftp_sizes[-2:]
 
             elif entry["library_layout"] == "SINGLE":
 
-                # If there are fewer than one or more than two links, ignore accession:
+                # If there are fewer than one or more
+                # than two links, ignore accession:
                 if len(ftp_links) != 1:
                     continue
                 else:
@@ -287,9 +325,14 @@ class Survey:
 
             if bases:
                 try:
-                    coverage = bases/(float(genome_sizes.loc[entry["tax_id"], "Size"])*1000000)
+                    coverage = bases/(float(
+                        genome_sizes.loc[entry["tax_id"], "Size"]
+                    )*1000000)
                 except KeyError or ValueError or ZeroDivisionError:
-                    stamp("TaxID", entry["tax_id"], " for determination of genome size could not be found.")
+                    stamp(
+                        "TaxID", entry["tax_id"],
+                        " for determination of genome size could not be found."
+                    )
                     coverage = None
             else:
                 coverage = None
@@ -322,17 +365,20 @@ class Survey:
         return df
 
     @staticmethod
-    def _construct_species_query(species, platform, source, layout, strategy) -> str:
-        """Construct a specific ENA query string to obtain paired-end
-        Illumina reads or Nanopore reads from the DataWarehouse."""
+    def _construct_species_query(
+            species, platform, source, layout, strategy
+    ) -> str:
+        """ Construct a specific ENA query string to obtain paired-end
+        Illumina reads or Nanopore reads from the DataWarehouse. """
 
-        return f'tax_name("{species}") AND instrument_platform={platform} AND ' \
-               f'library_source={source} AND library_layout={layout} ' \
-               f'AND library_strategy={strategy}'
+        return f'tax_name("{species}") AND instrument_platform={platform}' \
+            f' AND library_source={source} AND library_layout={layout}' \
+            f' AND library_strategy={strategy}'
 
     @staticmethod
     def _construct_study_query(study):
-        """Construct a specific ENA query string to obtain reads from a Study Accession"""
+        """Construct a specific ENA query
+        string to obtain reads from a Study Accession"""
 
         return f'"study_accession={study}"'
 
