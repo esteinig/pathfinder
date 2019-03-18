@@ -10,7 +10,7 @@ import shlex
 import subprocess
 
 from io import StringIO
-
+from numpy import nan
 from tqdm import tqdm
 from pathlib import Path
 from pandas.errors import EmptyDataError
@@ -58,7 +58,7 @@ class MiniAspera:
                     address=fq1_address, outfile=fq1_path, force=self.force
                 )
 
-                if fastq["ftp_2"]:
+                if fastq["ftp_2"] and not isinstance(fastq["ftp_2"], float):
                     fq2_address = fastq["ftp_2"].replace(
                         "ftp.sra.ebi.ac.uk", self.fasp
                     )
@@ -222,6 +222,7 @@ class Survey:
             )
 
         if species:
+            print('Scheme is', scheme, platform, layout)
             term = self._construct_species_query(
                 species, platform, source, layout, strategy
             )

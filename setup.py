@@ -24,7 +24,7 @@ setup(
     """,
     version="0.1",
     license="MIT",
-    description="Reproducible research and population genomic analysis pipelines "
-                "for nanopore and Illumina data; genome surveillance of"
-                "antimicrobial resistance and bacterial pathogens",
+    description="Reproducible research and population genomic analysis "
+                "pipelines for nanopore and Illumina data; genome surveillance "
+                "of antimicrobial resistance and bacterial pathogens",
 )

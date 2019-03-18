@@ -115,8 +115,6 @@ class Processor:
         the name components to be stripped for extracting IDs, and the
         parse method of this class to return a dictionary of:
 
-            .. key
-
         :param files:
             list of input files from glob for parsing.
         :param remove:

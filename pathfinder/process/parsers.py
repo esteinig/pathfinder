@@ -33,6 +33,16 @@ class Parser:
             "accession", "product",
         ]
 
+        self.kleborate_columns = [
+            "strain", "species", "st", "virulence_score", "resistance_score",
+            "Yersiniabactin", "YbST", "Colibactin", "CbST", "Aerobactin",
+            "AbST", "Salmochelin", "SmST", "rmpA", "rmpA2", "wzi",  "K_locus",
+            "K_locus_confidence", "O_locus", "O_locus_confidence", "AGly",
+            "Col", "Fcyn", "Flq", "Gly", "MLS", "Ntmdz", "Phe", "Rif", "Sul",
+            "Tet", "Tmt", "Bla", "Bla_Carb", "Bla_ESBL", "Bla_ESBL_inhR",
+            "Bla_broad", "Bla_broad_inhR",
+        ]
+
     #####################################
     # Parse methods for SurveyProcessor #
     #####################################

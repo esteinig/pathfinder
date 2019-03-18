@@ -11,12 +11,6 @@ from pathfinder.process.results import SurveyResult
 
 from pathlib import Path
 import pandas
-from io import StringIO
-from collections import Counter
-import delegator
-import difflib
-
-import random
 
 from colorama import Fore
 
