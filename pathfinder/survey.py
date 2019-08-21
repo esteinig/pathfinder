@@ -10,7 +10,6 @@ import shlex
 import subprocess
 
 from io import StringIO
-from numpy import nan
 from tqdm import tqdm
 from pathlib import Path
 from pandas.errors import EmptyDataError
@@ -25,7 +24,7 @@ class MiniAspera:
 
         self.force = force
 
-        self.ascp = Path.home() / ".aspera/connect/bin/ascp"
+        self.ascp = 'ascp'
         self.key = Path.home() / ".aspera/connect/etc/asperaweb_id_dsa.openssh"
 
         self.fasp = "era-fasp@fasp.sra.ebi.ac.uk:"
@@ -34,7 +33,8 @@ class MiniAspera:
             self,
             file,
             outdir: str = ".",
-            limit_download: int = None
+            limit_download: int = None,
+            ftp: bool = False,
     ):
 
         batch = self.read_batch(file)
@@ -50,38 +50,57 @@ class MiniAspera:
             pbar.set_description("Downloading batch")
 
             for i, fastq in batch.iterrows():
-                fq1_address = fastq["ftp_1"].replace(
-                    "ftp.sra.ebi.ac.uk", self.fasp
-                )
-                fq1_path = Path(outdir) / Path(fq1_address).name
-                self.download(
-                    address=fq1_address, outfile=fq1_path, force=self.force
-                )
 
-                if fastq["ftp_2"] and not isinstance(fastq["ftp_2"], float):
-                    fq2_address = fastq["ftp_2"].replace(
+                if ftp:
+                    fq1_address = fastq["ftp_1"]
+                else:
+                    fq1_address = fastq["ftp_1"].replace(
                         "ftp.sra.ebi.ac.uk", self.fasp
                     )
+                    fq1_path = Path(outdir) / Path(fq1_address).name
+
+                self.download(
+                    address=fq1_address,
+                    outfile=fq1_path,
+                    force=self.force,
+                    ftp=ftp
+                )
+
+                if fastq["ftp_2"] and not isinstance(
+                        fastq["ftp_2"], float
+                ):
+                    if ftp:
+                        fq2_address = fastq["ftp_2"]
+                    else:
+                        fq2_address = fastq["ftp_2"].replace(
+                            "ftp.sra.ebi.ac.uk", self.fasp
+                        )
                     fq2_path = Path(outdir) / Path(fq2_address).name
                     self.download(
-                        address=fq2_address, outfile=fq2_path, force=self.force
+                        address=fq2_address,
+                        outfile=fq2_path,
+                        force=self.force,
+                        ftp=ftp
                     )
 
                 pbar.update(1)
 
-    def download(self, address, outfile, force=False):
+    def download(self, address, outfile, force=False, ftp=False):
 
         # Skip existing files
         if not force and outfile.exists():
             print(f"File exists: {outfile}")
             return
 
-        cmd = shlex.split(
-            f"{self.ascp} -QT -l {str(self.limit)}m"
-            f" -P{str(self.port)} -i {self.key} -q "
-            f"{address} {outfile}"
-        )
-
+        if ftp:
+            cmd = shlex.split(f"wget {address} -O {outfile}")
+        else:
+            cmd = shlex.split(
+                f"{self.ascp} -QT -l {str(self.limit)}m"
+                f" -P{str(self.port)} -i {self.key} -q "
+                f"{address} {outfile}"
+            )
+            print(cmd)
         try:
             subprocess.call(cmd)
         except subprocess.CalledProcessError:
@@ -115,7 +134,8 @@ class Survey:
                           "read_count,base_count," \
                           "instrument_platform,instrument_model," \
                           "library_layout,library_source," \
-                          "library_strategy,sample_accession,study_accession"
+                          "library_strategy,sample_accession,study_accession," \
+                          "submitted_ftp,submitted_bytes"
 
         # TODO add study accession
 
@@ -190,7 +210,8 @@ class Survey:
             )
 
     def query_ena(self, species="Staphylococcus aureus", scheme="illumina",
-                  study: str = None, term: str = None) -> (dict, str):
+                  study: str = None, sample: list = None, term: str = None,
+                  submitted_fastq: bool = False) -> (dict, str):
 
         """
         Search the ENA warehouse for raw sequence reads with the
@@ -199,7 +220,8 @@ class Survey:
         """
 
         # Format queries correctly:
-        scheme = scheme.lower()
+        if isinstance(scheme, str):
+            scheme = scheme.lower()
 
         # At the moment, restrict queries to schemes:
         if scheme == "illumina":
@@ -217,12 +239,13 @@ class Survey:
             strategy = "WGS"
 
         else:
-            raise SurveyError(
-                "Require pre-defined WGS scheme: 'Illumina' or 'Nanopore'"
-            )
+
+            platform = ""
+            source = ""
+            layout = ""
+            strategy = ""
 
         if species:
-            print('Scheme is', scheme, platform, layout)
             term = self._construct_species_query(
                 species, platform, source, layout, strategy
             )
@@ -230,6 +253,9 @@ class Survey:
             term = self._construct_study_query(study)
         elif term:
             pass
+        elif sample:
+            for i in range(len(sample)):
+                term = self._construct_sample_query(sample)
         else:
             raise ValueError(
                 "Need to specify either species, study accession, "
@@ -237,17 +263,17 @@ class Survey:
 
         url = f"{self.url_query}{term}&result={self.url_result}" \
               f"&fields={self.url_fields}&" \
-            f"display={self.url_display}".replace(" ", "%20")
+              f"display={self.url_display}".replace(" ", "%20")
 
-        query_results = StringIO(urllib.request.urlopen(url)
-                                 .read().decode('utf-8'))
+        print(url)
 
-        try:
-            df = pandas.read_csv(query_results, sep="\t")
-        except EmptyDataError:
-            raise SurveyError(f"No results were returned for query: {url}")
+        url = "https://www.ebi.ac.uk/ena/data/warehouse/search?query=%22(run_accession=%22ERR279037%22%20OR%20run_accession=%22ERR279038%22%20OR%20run_accession=%22ERR279039%22%20OR%20run_accession=%22ERR264127%22%20OR%20run_accession=%22ERR264124%22%20OR%20run_accession=%22ERR264125%22%20OR%20run_accession=%22ERR264126%22%20OR%20run_accession=%22ERR264128%22%20OR%20run_accession=%22ERR264129%22%20OR%20run_accession=%22ERR264130%22)%22&domain=read&result=read_run&fields=run_accession,tax_id,fastq_ftp,fastq_bytes,read_count,base_count,instrument_platform,instrument_model,library_layout,library_source,library_strategy,sample_accession,study_accession,submitted_ftp,submitted_bytes&display=report"
 
-        query_results = self._sanitize_ena_query(df, url)
+        df = self._query(url)
+
+        query_results = self._sanitize_ena_query(
+            df, url, submitted_fastq=submitted_fastq
+        )
 
         self.results[time.time()] = query_results
         self.query = query_results
@@ -255,7 +281,15 @@ class Survey:
         return query_results, term
 
     @staticmethod
-    def _sanitize_ena_query(df, url) -> pandas.DataFrame:
+    def _query(url) -> pandas.DataFrame:
+
+        query_results = StringIO(urllib.request.urlopen(url)
+                                 .read().decode('utf-8'))
+
+        return pandas.read_csv(query_results, sep="\t")
+
+    @staticmethod
+    def _sanitize_ena_query(df, url, submitted_fastq) -> pandas.DataFrame:
 
         # Drop rows with missing FTP links:
         df = df.dropna(subset=["fastq_ftp"])
@@ -272,8 +306,12 @@ class Survey:
         for index, entry in df.iterrows():
 
             # FTP Links
-            ftp_links = entry["fastq_ftp"].strip(";").split(";")
-            ftp_sizes = entry["fastq_bytes"].strip(";").split(";")
+            if not submitted_fastq:
+                ftp_links = str(entry["fastq_ftp"]).strip(";").split(";")
+                ftp_sizes = str(entry["fastq_bytes"]).strip(";").split(";")
+            else:
+                ftp_links = str(entry["submitted_ftp"]).strip(";").split(";")
+                ftp_sizes = str(entry["submitted_bytes"]).strip(";").split(";")
 
             if entry["library_layout"] == "PAIRED":
 
@@ -290,9 +328,6 @@ class Survey:
                     # check that they are conforming to
                     # pattern _1.fastq.gz and _2.fastq.gz:
                     ftp_links = ftp_links[-2:]
-                    if "_1.fastq.gz" not in ftp_links[0] and \
-                            "_2.fastq.gz" not in ftp_links[1]:
-                        continue
                     ftp_1, ftp_2 = ftp_links
                     ftp_sizes = ftp_sizes[-2:]
 
@@ -356,7 +391,9 @@ class Survey:
                 "study": entry["study_accession"]
             }
 
-            sanitized_dict[entry["run_accession"]] = entry_dict
+            sanitized_dict[
+                entry["run_accession"]
+            ] = entry_dict
 
         try:
             df = pandas.DataFrame(sanitized_dict).T
@@ -372,18 +409,33 @@ class Survey:
         """ Construct a specific ENA query string to obtain paired-end
         Illumina reads or Nanopore reads from the DataWarehouse. """
 
-        return f'tax_name("{species}") AND instrument_platform={platform}' \
-            f' AND library_source={source} AND library_layout={layout}' \
-            f' AND library_strategy={strategy}'
+        q =  ''
+        if species:
+            q += f'tax_name("{species}")'
+        if platform:
+            q += f'AND instrument_platform={platform}'
+        if source:
+            q += f' AND library_source={source}'
+        if strategy:
+            q += f' AND library_strategy={strategy}'
 
     @staticmethod
-    def _construct_study_query(study):
+    def _construct_study_query(study: list or str):
         """Construct a specific ENA query
         string to obtain reads from a Study Accession"""
 
-        return f'"study_accession={study}"'
+        if isinstance(study, str):
+            return f'"study_accession={study}"'
+        else:
+            return f'"' + " OR ".join(
+                f'study_accession={s}' for s in study
+            ) + f'"'
 
     @staticmethod
-    def _construct_sample_query(sample):
-
-        return f'"sample_accession={sample}"'
+    def _construct_sample_query(sample: list or str):
+        if isinstance(sample, str):
+            return f'"sample_accession={sample}"'
+        else:
+            return f'"(' + " OR ".join(
+                f'run_accession="{s}"' for s in sample
+            ) + f')"' + "&domain=read"

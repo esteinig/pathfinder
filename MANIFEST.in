@@ -1,0 +1,2 @@
+include pathfinder/resources/asperaweb_id_dsa.openssh
+include pathfinder/resources/genome.sizes

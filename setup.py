@@ -22,7 +22,7 @@ setup(
         pf=pathfinder.terminal.client:terminal_client
         pathfinder=pathfinder.terminal.client:terminal_client
     """,
-    version="0.1",
+    version="0.2",
     license="MIT",
     description="Reproducible research and population genomic analysis "
                 "pipelines for nanopore and Illumina data; genome surveillance "

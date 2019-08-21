@@ -40,7 +40,8 @@ def stamp(*args, color="yellow"):
 def get_batches(it, size):
 
     """ Batch iterator from:
-    https://stackoverflow.com/questions/28022223/how-to-iterate-over-a-dictionary-n-key-value-pairs-at-a-time
+    https://stackoverflow.com/questions/28022223/
+    how-to-iterate-over-a-dictionary-n-key-value-pairs-at-a-time
     """
 
     it = iter(it)
@@ -59,12 +60,13 @@ def get_simple_date(datetime_object):
 def get_genome_sizes():
 
     """
-    Get median genome size for given species name from resources/prokaryote.sizes.txt (NCBI Prokaryot DB)
+    Get median genome size for given species name from
+    resources/prokaryote.sizes.txt (NCBI Prokaryot DB)
     by searching for TaxID.
 
     """
 
-    genome_sizes = get_package_path() / "resources" / "genome.sizes"
+    genome_sizes = Path(__file__).parent / "resources" / "genome.sizes"
     genome_sizes = pandas.read_csv(genome_sizes, index_col=0)
 
     return genome_sizes
@@ -125,3 +127,56 @@ def get_subdict(key, dictionary):
                 if isinstance(d, dict):
                     for result in get_subdict(key, d):
                         yield result
+
+
+# Pipeline Modules
+
+def get_content(path):
+    """Get content by directory / files if it contains files """
+    content = {}
+    for directory, subdirs, files in os.walk(path):
+        if files:
+            content[Path(directory)] = [
+                Path(directory) / Path(file) for file in files
+            ]
+
+    return content
+
+
+def get_id_from_fname(fname: str or Path, remove: str or list = None):
+    """Helper function to deconstruct a filename
+    since there is no scheme to IDs.
+    :param fname: file basename.
+    :param remove: substrings to be removed."""
+
+    if not remove:
+        return fname
+
+    if isinstance(fname, Path):
+        fname = str(fname.name)
+    if isinstance(remove, list):
+        for r in remove:
+            fname = fname.replace(r, '')
+        return fname
+    elif isinstance(remove, str):
+        return fname.replace(remove, '')
+    else:
+        raise ValueError
+
+
+def retain_files(files: list, retain: str) -> list:
+    """Helper function to retain files if sub str
+    is contained in file name
+    :param files: list of file paths
+    :param retain: str in file name, to retain file
+    """
+    retained = []
+    for file in files:
+        if isinstance(file, Path):
+            fname = str(file.name)
+        else:
+            fname = os.path.basename(file)
+        if retain in fname:
+            retained.append(file)
+
+    return retained

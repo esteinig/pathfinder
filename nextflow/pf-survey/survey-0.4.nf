@@ -1,28 +1,30 @@
 log.info """
 =======================================================
                      PathFinder
-                Survey Pipeline v0.3
+                Survey Pipeline v0.4
                (QC, Assembly, Typing)
 =======================================================
 
-run_id          =    $params.run_id
-out_dir         =    $params.out_dir
-file_dir        =    $params.file_dir
-file_pattern    =    $params.file_pattern
-file_extension  =    $params.file_extension
-resource_dir    =    $params.resource_dir
+Directory configuration:
+
+Output directory:               $params.outdir
+Fastq input:                    $params.fastq
+Resource directory:             $params.resources
+
+Process configuration:
 
 leading         =    $params.leading
 trailing        =    $params.trailing
 min_len         =    $params.min_len
 sliding_window  =    $params.sliding_window
 adapters        =    $params.adapters
-kraken_db       =    $params.minikraken
+kraken_db       =    $params.taxdb
 assembler       =    $params.assembler
 depth           =    $params.depth
 reference       =    $params.reference
 
 mash            =    $params.mash
+snippy          =    $params.snippy
 mykrobe         =    $params.mykrobe
 kleborate       =    $params.kleborate
 
@@ -32,7 +34,7 @@ kleborate       =    $params.kleborate
 
 
 fastq = Channel
-		.fromFilePairs("${params.file_dir}/${params.file_pattern}${params.file_extension}", flat: true)
+		.fromFilePairs("${params.fastq}", flat: true)
 		.ifEmpty { exit 1, "Input read files could not be found." }
 
 if (params.genus) {
@@ -43,8 +45,7 @@ if (params.genus) {
 
 process Trimmomatic {
 
-    label "survey"
-	label "medium"
+  label "trimmomatic"
 
 	tag { id }
 
@@ -52,11 +53,11 @@ process Trimmomatic {
 	set id, file(forward), file(reverse) from fastq
 
 	output:
-	set id, file("${id}_1.fq.gz"), file("${id}_2.fq.gz") into kraken, shovill, mykrobe
+	set id, file("${id}_1.fq.gz"), file("${id}_2.fq.gz") into kraken, snippy, shovill, mykrobe
 
 	"""
 	trimmomatic PE ${forward} ${reverse} -threads $task.cpus $params.phred -baseout ${id}.fq.gz \
-	ILLUMINACLIP:${params.resource_dir}/${params.adapters}:2:30:10:3:TRUE LEADING:${params.leading} TRAILING:${params.trailing} \
+	ILLUMINACLIP:${params.resources}/${params.adapters}:2:30:10:3:TRUE LEADING:${params.leading} TRAILING:${params.trailing} \
 	SLIDINGWINDOW:${params.sliding_window} MINLEN:${params.min_len}
 
 	mv ${id}_1P.fq.gz ${id}_1.fq.gz
@@ -67,34 +68,32 @@ process Trimmomatic {
 
 process Shovill {
 
-  label "survey"
-	label "high"
+    label "shovill"
 
-	tag { id }
-	publishDir "${params.out_dir}/skesa", mode: "copy"
+    tag { id }
+    publishDir "${params.outdir}/skesa", mode: "copy"
 
-	input:
-	set id, file(forward), file(reverse) from shovill.filter{ it[1].size()>10000 & it[2].size()>10000 } // Failed / empty file can be up to 10kb
+    input:
+    set id, file(forward), file(reverse) from shovill.filter{ it[1].size()>10000 & it[2].size()>10000 } // Failed / empty file can be up to 10kb
 
-	output:
-	set id, file("${id}.fasta") into mash, abricate, mlst, prokka, kleborate
+    output:
+    set id, file("${id}.fasta") into mash, abricate, mlst, prokka, kleborate, sccion
 
-	"""
-	shovill --R1 ${forward} --R2 ${reverse} --cpus $task.cpus --ram $task.memory \
-  --depth $params.depth --assembler $params.assembler --outdir $id --force
-  mv ${id}/contigs.fa ${id}.fasta
-	"""
+    """
+    shovill --R1 ${forward} --R2 ${reverse} --cpus $task.cpus --ram $task.memory \
+    --depth $params.depth --assembler $params.assembler --outdir $id --force
+    mv ${id}/contigs.fa ${id}.fasta
+    """
 
 }
 
 
 process Kraken2 {
 
-    label "survey"
-  	label "high"
+    label "kraken2"
 
     tag { id }
-    publishDir "${params.out_dir}/kraken", mode: "copy"
+    publishDir "${params.outdir}/kraken", mode: "copy"
 
     input:
     set id, file(forward), file(reverse) from kraken.filter{ it[1].size()>10000 & it[2].size()>10000 }
@@ -104,9 +103,32 @@ process Kraken2 {
 
     """
 
-    kraken2 --db ${params.resource_dir}/${params.minikraken} --threads $task.cpus --output "-" \
+    kraken2 --db ${params.resources}/${params.minikraken} --threads $task.cpus --output "-" \
     --fastq-input --gzip-compressed --paired --report ${id}.report --use-names ${forward} ${reverse}
     """
+
+}
+
+if (params.snippy){
+
+    process Snippy {
+
+      label "snippy"
+      tag { id }
+      publishDir "${params.outdir}/snippy", mode: "copy"
+
+      input:
+      set id, file(forward), file(reverse) from snippy
+
+      output:
+      file("$id/${id}.tab") into core_alignment
+
+      """
+      snippy --cpus $task.cpus --ram $task.memory --outdir $id --prefix $id \
+      --reference $params.resources/$params.reference --R1 $forward --R2 $reverse
+      """
+
+    }
 
 }
 
@@ -114,10 +136,9 @@ if (params.mykrobe) {
     process MykrobePredictor {
 
         label "mykrobe"
-          label "medium"
 
         tag { id }
-        publishDir "${params.out_dir}/mykrobe", mode: "copy"
+        publishDir "${params.outdir}/mykrobe", mode: "copy"
 
         input:
         set id, file(forward), file(reverse) from mykrobe.filter{ it[1].size()>10000 & it[2].size()>10000 }
@@ -126,7 +147,7 @@ if (params.mykrobe) {
         set id, file("${id}.json")
 
         """
-        mykrobe predict --threads $task.cpus ${id} $params.mykrobe --seq $forward $reverse > ${id}.json
+        mykrobe predict --format json --threads $task.cpus ${id} $params.mykrobe_other --seq $forward $reverse > ${id}.json
         """
 
     }
@@ -134,14 +155,13 @@ if (params.mykrobe) {
 
 process Abricate {
 
-  label "survey"
-	label "minimum"
+  label "abricate"
 
 	// Assembly-based typing with T. Seemann's Abricate
 
 	tag { id }
 
-	publishDir "${params.out_dir}/abricate", mode: "copy"
+	publishDir "${params.outdir}/abricate", mode: "copy"
 
 	input:
 	set id, file(assembly) from abricate.filter{ it[1].size()>10000 }
@@ -159,13 +179,12 @@ process Abricate {
 
 process MLST {
 
-  label "survey"
-	label "minimum"
+  label "mlst"
 
 	// Assembly-based MLST
 
 	tag { id }
-	publishDir "${params.out_dir}/mlst", mode: "copy"
+	publishDir "${params.outdir}/mlst", mode: "copy"
 
 	input:
 	set id, file(assembly) from mlst.filter{ it[1].size()>10000 }
@@ -182,35 +201,33 @@ process MLST {
 if (params.mash){
     process Mash {
 
-        label "survey"
-        label "minimum"
+      label "mash"
 
-        // MinHash distance against global reference:
+      // MinHash distance against global reference:
 
-        tag { id }
-        publishDir "${params.out_dir}/mash", mode: "copy"
+      tag { id }
+      publishDir "${params.outdir}/mash", mode: "copy"
 
-        input:
-        set id, file(assembly) from mash.filter{ it[1].size()>10000 }
+      input:
+      set id, file(assembly) from mash.filter{ it[1].size()>10000 }
 
-        output:
-        file("${id}.mash.tab")
+      output:
+      file("${id}.mash.tab")
 
-        """
-        mash dist $assembly $params.resource_dir/$params.reference > ${id}.mash.tab
-        """
+      """
+      mash dist $assembly $params.resources/$params.reference > ${id}.mash.tab
+      """
     }
 }
 
 process Prokka {
 
-  label "survey"
-  label "medium"
+  label "prokka"
 
   // MinHash distance against global reference:
 
   tag { id }
-  publishDir "${params.out_dir}/prokka", mode: "copy"
+  publishDir "${params.outdir}/prokka", mode: "copy"
 
   input:
   set id, file(assembly) from prokka.filter{ it[1].size()>10000 }
@@ -224,17 +241,17 @@ process Prokka {
   """
 
 }
+
 if (params.kleborate) {
 
   process Kleborate {
 
-    label "kleb"
-    label "minimal"
+    label "kleborate"
 
     // MinHash distance against global reference:
 
     tag { id }
-    publishDir "${params.out_dir}/kleborate", mode: "copy"
+    publishDir "${params.outdir}/kleborate", mode: "copy"
 
     input:
     set id, file(assembly) from kleborate.filter{ it[1].size()>10000 }
@@ -243,8 +260,34 @@ if (params.kleborate) {
     file("${id}.tab")
 
     // Requires Blast 2.2 separate env
+
     """
     kleborate -a $assembly --all -o ${id}.tab
+    """
+
+  }
+
+}
+
+if (params.sccion) {
+
+  process SCCion {
+
+    label "sccion"
+
+    // SCCion typing de novo assembly:
+
+    tag { id }
+    publishDir "${params.outdir}/sccion", mode: "copy"
+
+    input:
+    set id, file(assembly) from sccion.filter{ it[1].size()>10000 }
+
+    output:
+    file("${id}.tab")
+
+    """
+    sccion type -a $assembly --resistance --mge > ${id}.tab
     """
 
   }

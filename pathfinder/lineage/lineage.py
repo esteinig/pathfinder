@@ -6,9 +6,7 @@ Pathfinder Lineage Module
 Lineage analyser prototype.
 """
 
-import pandas
-
-from pathfinder.process.results import SurveyResult
+from old.process.results import SurveyResult
 from pathfinder.database.client import PathfinderClient
 
 

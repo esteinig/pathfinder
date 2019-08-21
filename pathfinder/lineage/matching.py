@@ -7,7 +7,7 @@ Lineage matching prototype. Tries to determine lineage based on nanopore
 reads and a database of MRSA lineages or other `pf-survey` results.
 """
 
-from pathfinder.process.results import SurveyResult
+from old.process.results import SurveyResult
 
 from pathlib import Path
 import pandas
@@ -48,13 +48,17 @@ class LineageMatching:
         )
 
     def select_sequence_types(
-            self,
-            outdir: Path = Path.home() / 'transfer' / 'lmdb' / 'seqs',
-            min_count=None, sample=None, values=None,
+        self,
+        outdir: Path = Path.home() / 'transfer' / 'lmdb' / 'seqs',
+        min_count=None,
+        sample=None,
+        values=None,
     ):
 
-        data = self.survey.data.select('mlst', 'sequence_type', values=values,
-                                       min_count=min_count, sample=sample)
+        data = self.survey.data.select(
+            'mlst', 'sequence_type', values=values,
+            min_count=min_count, sample=sample
+        )
 
         mlst = data.mlst.sequence_type.sort_index()
         pheno = data.mykrobe_phenotype.sort_index()
